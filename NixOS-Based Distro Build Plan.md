@@ -1,5 +1,5 @@
-# Distro Build Plan — "Fresh Userland, Boring Core" on NixOS
-**Prepared:** Wednesday, July 22, 2026 · rev. 1 · **Coauthors:** Paul Martin, Claude
+# Distro Build Plan on NixOS
+**Prepared:** Wednesday, July 22, 2026 · rev. 1 · **Coauthors:** Paul Martin
 **Decisions ratified today:** base = nixos-unstable, flake-pinned · kernel = upstream kernel.org LTS (6.18 line) · desktop = GNOME old-stable (n−1), self-maintained overlay · root FS = Btrfs on LUKS2 with RAID1 support; ZFS for arrays; these are the only two officially supported filesystems · first milestone = workstation **and** installer ISO in parallel, from the same flake
 
 Cross-references: *Patching Research Plan.md* (which already cites this document by name), *System Core/Distro Vision.md*, and the per-domain notes cited throughout §5. Facts asserted in this plan were verified live today unless explicitly marked UNVERIFIED; the ledger is §10.
