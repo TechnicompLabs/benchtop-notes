@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Obsidian vault internals (these notes are authored in Obsidian)
+.obsidian/
+.trash/
+
+# Held back from the public repo by decision (2026-09-03): unpublished
+# research strategy. Ignored belt-and-suspenders so an in-place `git init`
+# in the source notes folder can never accidentally stage it.
+Patching Research Plan.md
