@@ -1,51 +1,70 @@
 # TechniComp Benchtop Linux — Build Configuration
 
-TechniComp Benchtop Linux is an immutable, openSUSE Slowroll-based desktop image, built with kiwi on the openSUSE Build Service (OBS). Each package's source is held in a GitHub repository, and OBS retrieves those sources automatically through scmsync. The image follows the current Slowroll release rather than a fixed snapshot. OBS rebuilds it automatically whenever Slowroll changes, and it produces an image only when the entire package set resolves. When Slowroll is temporarily inconsistent, no new image is produced, and the most recent successful image remains available. The build uses Slowroll's packages without any local overrides.
+TechniComp Benchtop Linux is an immutable GNOME desktop image built with kiwi on the openSUSE Build Service. It is based on openSUSE Tumbleweed. The image is assembled against a tested Tumbleweed snapshot, and each package's source is held in a GitHub repository that the Build Service retrieves automatically through scmsync. Because the image is immutable, the entire package set must resolve as a single unit; when it does, the Build Service produces the image, and the running system is updated afterwards by transactional-update.
+
+## Base distribution
+
+The build uses openSUSE Tumbleweed through the repository `openSUSE:Factory/snapshot`. That repository is the openQA-tested Tumbleweed snapshot, and it provides every package as a real, built binary. A kiwi image build requires real binaries, which is the reason Tumbleweed is used rather than Slowroll.
+
+Slowroll was evaluated first and rejected as a build base. On the Build Service, Slowroll's packages are provided through download-on-demand repositories (`openSUSE:Tumbleweed/slowroll` and `openSUSE:Tumbleweed/slowroll-next`), and image builds cannot install download-on-demand binaries. openSUSE produces its own Slowroll installation image only by first copying the required binaries into a staging project. Building against `openSUSE:Factory/snapshot` avoids that entirely, and it is the same base openSUSE's Aeon image uses, from which this image is derived.
 
 ## Source repositories
 
-The build is composed of three public repositories under github.com/TechnicompLabs, each mapping to a single OBS package.
+The build is composed of three public repositories under github.com/TechnicompLabs, each mapping to a single Build Service package.
 
-- `benchtop-settings` builds the OBS package `tc-benchtop-settings`. This is a configuration package whose files are installed directly from `Source0` onward, without a tarball.
-- `benchtop-patterns` builds `patterns-tc-benchtop`, which produces the metapackage `patterns-tc-benchtop-base`. That metapackage lists approximately 340 `Requires`, and the image depends on it.
-- `benchtop-image` builds `tc-benchtop-image`, the kiwi image description. It uses an oem, btrfs read-only-snapshot layout and was derived from Aeon.
+- `benchtop-settings` builds `tc-benchtop-settings`, a configuration package whose files are installed directly from `Source0` onward, without a tarball.
+- `benchtop-patterns` builds `patterns-tc-benchtop`, which produces the metapackage `patterns-tc-benchtop-base`. The image depends on that metapackage.
+- `benchtop-image` builds `tc-benchtop-image`, the kiwi image description. It is an oem, btrfs read-only-snapshot layout derived from Aeon.
 
-Each OBS package is connected to its repository by an scmsync entry in its `_meta`:
+Each package is connected to its repository by an scmsync entry in its `_meta`:
 
 ```
 <scmsync>https://github.com/TechnicompLabs/<repo>#main</scmsync>
 ```
 
+The image description uses `<source path="obsrepositories:/">` for its repository, so the packages come entirely from the repository paths configured in the project metadata. The base is therefore controlled by the project metadata, and `config.kiwi` contains no repository URLs.
+
 ## Build Service project structure
 
 ```
-home:technicomp:benchtop           # base project; repository "openSUSE_Slowroll" -> path openSUSE:Slowroll/standard
+home:technicomp:benchtop            # repository openSUSE_Tumbleweed -> path openSUSE:Factory/snapshot
   tc-benchtop-settings
   patterns-tc-benchtop
-home:technicomp:benchtop:images    # Type: kiwi; paths to home:technicomp:benchtop/openSUSE_Slowroll and openSUSE:Slowroll/standard
-  tc-benchtop-image                # requires patterns-tc-benchtop-base
+home:technicomp:benchtop:images     # Type: kiwi; repository openSUSE_Tumbleweed
+  tc-benchtop-image                 #   paths: home:technicomp:benchtop/openSUSE_Tumbleweed, openSUSE:Factory/snapshot
 ```
 
-The image resides in its own subproject because a kiwi build requires `Type: kiwi` in the project configuration, and applying that setting to the base project would break the RPM builds there.
+The image resides in its own subproject because a kiwi build requires `Type: kiwi` in the project configuration, and applying that setting to the base project would interfere with the ordinary RPM builds there.
+
+## Provider preferences
+
+Several capabilities that the package set requires can be satisfied by more than one package. The Build Service reports these as "have choice" and does not choose on its own. They are resolved in the project configuration of `home:technicomp:benchtop:images`:
+
+```
+Prefer: helm
+Prefer: valkey-compat-redis
+Prefer: plymouth-branding-openSUSE
+Prefer: openSUSE-release-appliance
+```
+
+`helm` is preferred over `helm3`, the legacy name. `valkey-compat-redis` provides the `redis` capability using Valkey. `plymouth-branding-openSUSE` selects the openSUSE boot-splash branding. `openSUSE-release-appliance` selects the appliance release flavor; it is an interim choice, and the image identifies as openSUSE Tumbleweed until a dedicated `tc-benchtop-release` package is created.
 
 ## Automatic rebuilds
 
-A push to any repository rebuilds its package immediately, rather than waiting for the scmsync poll. This is configured with one OBS workflow token and one organization-level GitHub webhook.
-
-The token is created as follows. The GitHub token it requires needs only the `repo:status` scope, so that OBS can report build results back onto the commits.
+A push to any repository rebuilds its package immediately rather than waiting for the scmsync poll. This is configured with one Build Service workflow token and one organization-level GitHub webhook. The GitHub token requires only the `repo:status` scope, so that the Build Service can report build results back onto the commits.
 
 ```
 osc token --create --operation workflow --scm-token <GITHUB_PAT>   # prints an id and a secret
 ```
 
-A single webhook is then added under TechnicompLabs -> Settings -> Webhooks, using the id and secret from that command:
+A single webhook is added under TechnicompLabs -> Settings -> Webhooks, using that id and secret:
 
 - Payload URL: `https://build.opensuse.org/trigger/workflow?id=<id>`
 - Content type: `application/json`
 - Secret: `<secret>`
 - Event: push
 
-Each repository contains a `.obs/workflows.yml` that names its own project and package:
+Each repository contains a `.obs/workflows.yml` naming its own project and package:
 
 ```yaml
 rebuild_on_push:
@@ -63,28 +82,23 @@ rebuild_on_push:
 ## Common commands
 
 ```
-osc results home:technicomp:benchtop:images tc-benchtop-image                 # image status; any value other than "unresolvable" indicates it is building
-osc buildinfo home:technicomp:benchtop:images tc-benchtop-image openSUSE_Slowroll x86_64 \
-  2>&1 | grep -iE "nothing provides|unresolvable"                             # lists every unmet dependency in a single pass
-osc service remoterun home:technicomp:benchtop <package>                      # forces scmsync to retrieve the source again if it does not update on its own
-osc rebuild <project> <package>                                              # forces a rebuild
-osc cat <project> <package> <file>                                          # displays the source file that OBS currently holds
+osc results home:technicomp:benchtop:images                                    # image status
+osc buildinfo home:technicomp:benchtop:images tc-benchtop-image openSUSE_Tumbleweed x86_64 \
+  2>&1 | grep -iE "nothing provides|unresolvable|have choice"                   # unmet dependencies or provider choices
+osc getbinaries home:technicomp:benchtop:images tc-benchtop-image openSUSE_Tumbleweed x86_64   # download the built image
+osc service remoterun home:technicomp:benchtop <package>                        # force scmsync to retrieve source again
+osc rebuild <project> <package>                                                 # force a rebuild
+osc cat <project> <package> <file>                                             # display the source the Build Service holds
 ```
 
-## Notes on build behavior
+## Notes on build behaviour
 
-OBS rebuilds automatically both when Slowroll updates and when a repository is pushed, so a build rarely needs to be triggered manually.
+The image resolves against a single tested Tumbleweed snapshot, so the whole package set is internally consistent at build time. The update cadence is determined by which snapshot the build targets; it currently follows the latest tested Tumbleweed snapshot and can be slowed by pinning to a fixed snapshot.
 
-Because the image is built as a single unit, the entire package set must resolve at once. A single missing or mismatched Slowroll package prevents the whole image from building until Slowroll provides the correct version.
-
-A package that shows a `disabled` build in Slowroll is not necessarily missing. Slowroll disables the build for certain packages and instead ships a binary imported from openSUSE Factory. To determine whether a package is actually available, use `osc buildinfo` rather than the `disabled` flag.
-
-Slowroll occasionally ships a newer package before its dependency is available. Recent instances were `cockpit-ws` requiring a newer `selinux-policy`, and `qemu` requiring a newer `xen` (`libxenctrl`). These resolve on their own once Slowroll updates the dependency, and a large package such as `xen` should not be built locally to compensate.
-
-If a package that Slowroll cannot provide is genuinely required, it can be linked from Factory with `osc linkpac openSUSE:Factory <package> home:technicomp:benchtop`, and removed afterward with `osc rdelete`. None are linked at present.
+When a package requires a capability that several packages provide, the build fails with "have choice" until a `Prefer` line selects one. This is expected, and is not a missing-package error.
 
 Commit messages contain no co-author or tooling attribution.
 
 ## Current state
 
-The build resolves cleanly, apart from transient inconsistencies within Slowroll itself. It is currently waiting on Slowroll, and OBS will build the image once Slowroll is consistent again.
+The image resolves cleanly against `openSUSE:Factory/snapshot` and builds. Remaining work, in rough order: a `tc-benchtop-release` package to give the system its own identity in place of `openSUSE-release-appliance`; a custom kernel; and, if a slower GNOME is wanted, pinning the build to a fixed Tumbleweed snapshot and advancing it deliberately.
